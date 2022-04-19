@@ -5,7 +5,7 @@
 
 
 #include <Servo.h>
-#include <Stepper.h>
+#include <AccelStepper.h>
 #include <Ewma.h>
 #include "configuration.h"
 
@@ -62,8 +62,7 @@ Ewma adcFilter2(filterRate);
 Ewma adcFilter3(filterRate);
 Ewma adcFilter4(filterRate);
 // Stepper Motor
-Stepper gripperStepper(STEPS_PER_REVOLUTION , GRIPPER_PIN_1, GRIPPER_PIN_2, GRIPPER_PIN_3, GRIPPER_PIN_4);
-Stepper armStepper(STEPS_PER_REVOLUTION , ARM_PIN_1, ARM_PIN_2, ARM_PIN_3, ARM_PIN_4);
+AccelStepper armStepper = AccelStepper(MOTOR_INTERFACE_TYPE, ARM_STEP_PIN, ARM_DIR_PIN);
 
 
 //===================== setup() ========================
@@ -108,6 +107,9 @@ void setup() {
   myServo3.attach(servo3);
   myServo4.attach(servo4);
 
+// Assign pins to DC Motor
+  pinMode(ARM_DC_IN_A, OUTPUT);
+  pinMode(ARM_DC_IN_B, OUTPUT);
 
 //===== Initialize Command =====
   // Initialize Motor Driver.
@@ -139,10 +141,9 @@ void setup() {
   // Returns time(us)
   previousLoopTime = micros();
 
-  //Set initial gripper rpm
-  gripperStepper.setSpeed(GRIPPER_RPM);
-  //Set initial arm rpm
-  armStepper.setSpeed(ARM_RPM);
+  //Set initial arm rpm + acceleration
+  armStepper.setSpeed(ARM_STEPPER_SPEED);
+  armStepper.setAcceleration(ARM_STEPPER_ACCELERATION);
 
 } // End SetUp
 
@@ -169,11 +170,17 @@ void loop() {
     // Also set Deadband limit to the input Signal
 
     input1 = pulseIn(CH1,HIGH)-1500; //Channel 1
+    if(input5 <= 0) armStepper.runSpeed();
     input2 = pulseIn(CH2,HIGH)-1500; //Channel 2
+    if(input5 <= 0) armStepper.runSpeed();
     input3 = pulseIn(CH3,HIGH)-1500; //Channel 3
+    if(input5 <= 0) armStepper.runSpeed();
     input4 = pulseIn(CH4,HIGH)-1500; //Channel 4
+    if(input5 <= 0) armStepper.runSpeed();
     input5 = pulseIn(CH5,HIGH)-1500; //Channel 5
+    if(input5 <= 0) armStepper.runSpeed();
     input6 = pulseIn(CH6,HIGH)-1500; //Channel 6
+    if(input5 <= 0) armStepper.runSpeed();
 
     input1 = Deadband(input1,30); //Channel 1
     input2 = Deadband(input2,30); //Channel 2
@@ -189,11 +196,8 @@ void loop() {
     input5 = limitThreshold(input5, CH5_THRESHOLD);
     input6 = limitThreshold(input6, CH6_THRESHOLD);
 
-    input1 = adcFilter1.filter(input1);
-    input2 = adcFilter2.filter(input2);
     input3 = adcFilter3.filter(input3);
     input4 = adcFilter4.filter(input4);
-
     
     // Read Motor's Current From Motor Driver
     // The resolution of Arduino analogRead is 5/1024 Volts/Unit. (10-Bit, Signal vary from 0 to 1023 units)
@@ -205,15 +209,20 @@ void loop() {
     currentValue4 = analogRead(CS4)*0.035; // Motor Driver 4
 
     if(input5 > 0) {
+      input1 = adcFilter1.filter(input1);
+      input2 = adcFilter2.filter(input2);
+      moveSideways(0);
+      moveForwardBackward(0);
+      rotate(0);
       digitalWrite(ledPin3, LOW);
       digitalWrite(ledPin4, LOW);
-      if(currentValue1 < currentLimit && abs(input1) > 40) {
+      if(currentValue1 < currentLimit && abs(input1) > 50) {
         moveSideways(input1);
       }
-      if(currentValue2 < currentLimit && abs(input2) > 40) {
+      if(currentValue2 < currentLimit && abs(input2) > 50) {
         moveForwardBackward(input2);
       }
-      if(currentValue4 < currentLimit && abs(input4) > 40) {
+      if(currentValue4 < currentLimit && abs(input4) > 50) {
         rotate(input4);
       }
     }
@@ -222,14 +231,21 @@ void loop() {
       digitalWrite(ledPin4, HIGH);
       processGripperServo(input3, CH3_THRESHOLD, myServo3);
       processArmServo(input4, myServo4);
-      Serial.println("Test");
       if(abs(input1) > MOVEMENT_THRESHOLD/2) {
-        Serial.println(input1/abs(input1));
-        gripperStepper.step(input1/abs(input1));
+        armStepper.setMaxSpeed(1000);
+        armStepper.setSpeed(input1/abs(input1) * 100);
+      }
+      else {
+        armStepper.setSpeed(0);
+        armStepper.stop();
       }
       if(abs(input2) > MOVEMENT_THRESHOLD/2) {
-        Serial.println("Test2222");
-        armStepper.step(input2/abs(input2) * 15);
+        digitalWrite(ARM_DC_IN_A, input2/abs(input2) <= 0);
+        digitalWrite(ARM_DC_IN_B, input2/abs(input2) > 0);
+      }
+      else {
+        digitalWrite(ARM_DC_IN_A, LOW);
+        digitalWrite(ARM_DC_IN_B, LOW);
       }
     }
 
@@ -252,6 +268,8 @@ void loop() {
 //    Serial.print("\t LoopTime ");
 //    Serial.println(loopTime);
   } // End if
+
+  armStepper.runSpeed();
 } // End loop
 
 
@@ -278,9 +296,9 @@ void loop() {
 
 // ======== moveForwardBack ===========
   void moveForwardBackward(int value) {
-    int otm1 = OutputToMotor1(value);
-    int otm2 = OutputToMotor2(value);
-    int otm3 = OutputToMotor3(-value);
+    int otm1 = OutputToMotor1(-value);
+    int otm2 = OutputToMotor2(-value);
+    int otm3 = OutputToMotor3(value);
     int otm4 = OutputToMotor4(value);
     analogWrite(PWM1,otm1);
     analogWrite(PWM2,otm2);
@@ -290,10 +308,10 @@ void loop() {
 
 // ========= moveSideways =========
   void moveSideways(int value) {
-    analogWrite(PWM1,OutputToMotor1(-value));
-    analogWrite(PWM2,OutputToMotor2(value));
+    analogWrite(PWM1,OutputToMotor1(value));
+    analogWrite(PWM2,OutputToMotor2(-value));
     analogWrite(PWM3,OutputToMotor3(-value));
-    analogWrite(PWM4,OutputToMotor4(-value));
+    analogWrite(PWM4,OutputToMotor4(value));
   }
 
 // ======== rotate =====
@@ -301,7 +319,7 @@ void loop() {
     analogWrite(PWM1,OutputToMotor1(-value));
     analogWrite(PWM2,OutputToMotor2(-value));
     analogWrite(PWM3,OutputToMotor3(-value));
-    analogWrite(PWM4,OutputToMotor4(value));
+    analogWrite(PWM4,OutputToMotor4(-value));
   }
 
 //===== double Deadband(double value,double limit) =====
