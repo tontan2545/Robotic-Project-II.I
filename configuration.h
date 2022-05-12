@@ -23,7 +23,7 @@ const int ARM_DC_IN_B = 20;
 
 
 // Threshold
-const int MOVEMENT_THRESHOLD = 350;
+const int MOVEMENT_THRESHOLD = 500;
 const int TOGGLE_THRESHOLD = 500;
 
 // Receiver Threshold

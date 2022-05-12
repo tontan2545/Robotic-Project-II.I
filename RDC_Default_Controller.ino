@@ -35,49 +35,21 @@
 // Time
   unsigned long previousLoopTime = 0;
   unsigned long loopTime = 0;
-// Input Signal from Receiver 
-  int input1 = 0;
-  int input2 = 0;
-  int input3 = 0;
-  int input4 = 0;
-  int input5 = 0;
-  int input6 = 0;
 // Output Signal to Motor Driver  
   int out1 = 0;
   int out2 = 0;
   int out3 = 0;
   int out4 = 0;
 // Processed Input Signal
-  int left_w = 0;
-  int right_w = 0;
-// Motor's Current
-float currentValue1 = 0.0;
-float currentValue2 = 0.0;
-float currentValue3 = 0.0;
-float currentValue4 = 0.0;
-int currentLimit = 5;
-// Exponential filtering
-float filterRate = 0.1;
-Ewma adcFilter1(filterRate);
-Ewma adcFilter2(filterRate);
-Ewma adcFilter3(filterRate);
-Ewma adcFilter4(filterRate);
-// Stepper Motor
-AccelStepper armStepper = AccelStepper(MOTOR_INTERFACE_TYPE, ARM_STEP_PIN, ARM_DIR_PIN);
+  const int movement = 100;
+// Json Declaration
+  StaticJsonDocument<200> doc;
 
 
 //===================== setup() ========================
 
 
 void setup() {
-//===== Set Digital Pin Mode =====    
-// Set pinmode to read command signal from Receiver.  
-  pinMode(CH1,INPUT);   //channel 1
-  pinMode(CH2,INPUT);   //channel 2
-  pinMode(CH3,INPUT);   //channel 3
-  pinMode(CH4,INPUT);   //channel 4
-  pinMode(CH5,INPUT);   //channel 5
-  pinMode(CH6,INPUT);   //channel 6  
 // Set pinmode to read command signal from Test Switch.
   pinMode(buttonPin,INPUT);
 // Set pinmode to write command signal to Motor Driver.
@@ -96,21 +68,12 @@ void setup() {
   pinMode(INA4,OUTPUT);
   pinMode(INB4,OUTPUT);
   pinMode(PWM4,OUTPUT);
-  
-// Set pinmode to write command signal to LED.
+
+  // Set pinmode led
   pinMode(ledPin1,OUTPUT);
   pinMode(ledPin2,OUTPUT);
   pinMode(ledPin3,OUTPUT);
   pinMode(ledPin4,OUTPUT);
-// Assign Servo variable to a servo pin
-  myServo1.attach(servo1);
-  myServo2.attach(servo2);
-  myServo3.attach(servo3);
-  myServo4.attach(servo4);
-
-// Assign pins to DC Motor
-  pinMode(ARM_DC_IN_A, OUTPUT);
-  pinMode(ARM_DC_IN_B, OUTPUT);
 
 //===== Initialize Command =====
   // Initialize Motor Driver.
@@ -128,23 +91,12 @@ void setup() {
   
   digitalWrite(INA4,LOW);
   digitalWrite(INB4,LOW); 
-  analogWrite(PWM4,0); 
+  analogWrite(PWM4,0);
 
-  // Initialize Servo Motor, Set servo to Mid-point.
-  myServo1.write(10);
-  myServo2.write(10);
-  myServo3.write(10);
-  myServo4.write(10);
-     
+  while(!Serial) continue;
+  
   // Open Serial port, Set baud rate for serial data transmission.
   Serial.begin(115200); // USB:Rx0,Tx0
-
-  // Returns time(us)
-  previousLoopTime = micros();
-
-  //Set initial arm rpm + acceleration
-  armStepper.setSpeed(ARM_STEPPER_SPEED);
-  armStepper.setAcceleration(ARM_STEPPER_ACCELERATION);
 
 } // End SetUp
 
@@ -153,124 +105,44 @@ void setup() {
 
 
 void loop() {
-   
-  loopTime = micros()-previousLoopTime;
-  
-  
-  
-  // if loop time is more than 10000 microseconds, do the next loop.
-  // Limit Maximum feedback loop at 100Hz.
-  if(loopTime >= 10000) 
-  {
-    // Set new loop time
-    previousLoopTime = micros();
-
-    
-    // Read input signal from receiver. PulseIn signal from Receiver vary between 1000 - 2000.
-    // Substract 1500 as the offset to set new signal range from (1000, 2000) to (-500, 500) 
-    // Also set Deadband limit to the input Signal
-
-    input1 = pulseIn(CH1,HIGH)-1500; //Channel 1
-    if(input5 <= 0) armStepper.runSpeed();
-    input2 = pulseIn(CH2,HIGH)-1500; //Channel 2
-    if(input5 <= 0) armStepper.runSpeed();
-    input3 = pulseIn(CH3,HIGH)-1500; //Channel 3
-    if(input5 <= 0) armStepper.runSpeed();
-    input4 = pulseIn(CH4,HIGH)-1500; //Channel 4
-    if(input5 <= 0) armStepper.runSpeed();
-    input5 = pulseIn(CH5,HIGH)-1500; //Channel 5
-    if(input5 <= 0) armStepper.runSpeed();
-    input6 = pulseIn(CH6,HIGH)-1500; //Channel 6
-    if(input5 <= 0) armStepper.runSpeed();
-
-    input1 = Deadband(input1,30); //Channel 1
-    input2 = Deadband(input2,30); //Channel 2
-    input3 = Deadband(input3,50); //Channel 3
-    input4 = Deadband(input4,30); //Channel 4
-    input5 = Deadband(input5,30); //Channel 5
-    input6 = Deadband(input6,30); //Channel 6
-
-    input1 = limitThreshold(input1, CH1_THRESHOLD);
-    input2 = limitThreshold(input2, CH2_THRESHOLD);
-    input3 = limitThreshold(input3, CH3_THRESHOLD);
-    input4 = limitThreshold(input4, CH4_THRESHOLD);
-    input5 = limitThreshold(input5, CH5_THRESHOLD);
-    input6 = limitThreshold(input6, CH6_THRESHOLD);
-
-    input3 = adcFilter3.filter(input3);
-    input4 = adcFilter4.filter(input4);
-    
-    // Read Motor's Current From Motor Driver
-    // The resolution of Arduino analogRead is 5/1024 Volts/Unit. (10-Bit, Signal vary from 0 to 1023 units)
-    // The resolution of Current Sensor from POLOLU VNH5019 is 0.14 Volt/Amp.
-    // Convert analogRead signal(Volt) to Current(Amp) by multiply (5/1024)/0.14 = 0.035 Amp/Unit.
-    currentValue1 = analogRead(CS1)*0.035; // Motor Driver 1
-    currentValue2 = analogRead(CS2)*0.035; // Motor Driver 2
-    currentValue3 = analogRead(CS3)*0.035; // Motor Driver 3
-    currentValue4 = analogRead(CS4)*0.035; // Motor Driver 4
-
-    if(input5 > 0) {
-      input1 = adcFilter1.filter(input1);
-      input2 = adcFilter2.filter(input2);
-      moveSideways(0);
-      moveForwardBackward(0);
-      rotate(0);
-      digitalWrite(ledPin3, LOW);
-      digitalWrite(ledPin4, LOW);
-      if(currentValue1 < currentLimit && abs(input1) > 50) {
-        moveSideways(input1);
-      }
-      if(currentValue2 < currentLimit && abs(input2) > 50) {
-        moveForwardBackward(input2);
-      }
-      if(currentValue4 < currentLimit && abs(input4) > 50) {
-        rotate(input4);
+  if(Serial.available()) {
+    DeserializationError error = deserializeJson(doc, Serial);
+    Serial.println("serial available");
+    digitalWrite(ledPin1, LOW);
+    digitalWrite(ledPin2, LOW);
+    digitalWrite(ledPin3, LOW);
+    digitalWrite(ledPin4, LOW);
+    if(!error) {
+      int dir = doc["dir"];
+      Serial.println(dir);
+      switch (dir) {
+        // go forward
+        case 0:
+          digitalWrite(ledPin1, HIGH);
+          moveForwardBackward(movement);
+          break;
+        // go right
+        case 1:
+          digitalWrite(ledPin2, HIGH);
+       	  moveSideways(movement); 
+          break;
+        // go backward
+        case 2:
+          digitalWrite(ledPin3, HIGH);
+          moveForwardBackward(-movement);
+          break;
+        // go left
+        case 3:
+          digitalWrite(ledPin4, HIGH);
+           moveSideways(-movement); 
+          break;
+        default: 
+          moveSideways(0);
+          moveForwardBackward(0);
+          rotate(0);
       }
     }
-    else {
-      digitalWrite(ledPin3, HIGH);
-      digitalWrite(ledPin4, HIGH);
-      processGripperServo(input3, CH3_THRESHOLD, myServo3);
-      processArmServo(input4, myServo4);
-      if(abs(input1) > MOVEMENT_THRESHOLD/2) {
-        armStepper.setMaxSpeed(1000);
-        armStepper.setSpeed(input1/abs(input1) * -100);
-      }
-      else {
-        armStepper.setSpeed(0);
-        armStepper.stop();
-      }
-      if(abs(input2) > MOVEMENT_THRESHOLD/2) {
-        digitalWrite(ARM_DC_IN_A, input2/abs(input2) > 0);
-        digitalWrite(ARM_DC_IN_B, input2/abs(input2) <= 0);
-      }
-      else {
-        digitalWrite(ARM_DC_IN_A, LOW);
-        digitalWrite(ARM_DC_IN_B, LOW);
-      }
-    }
-
-    
-    
-
-    // Print
-    Serial.print("M1 ");
-    Serial.print(input1);
-    Serial.print(" M2 ");
-    Serial.print(input2);
-    Serial.print(" M3 ");
-    Serial.print(input3);
-    Serial.print(" M4 ");
-    Serial.print(input4);
-    Serial.print(" M5 ");
-    Serial.print(input5);
-    Serial.print(" M6 ");
-    Serial.println(input6);
-//    Serial.print("\t LoopTime ");
-//    Serial.println(loopTime);
-  } // End if
-
-  armStepper.runSpeed();
+  }
 } // End loop
 
 
@@ -280,19 +152,6 @@ void loop() {
   int limitThreshold(int value, int threshold) 
   {
     return max(min(value, threshold), -1*threshold);
-  }
-
-// ======= Process servo according to value =======
-  void processGripperServo(int value, int threshold, Servo servo)
-  {
-    int mappedAngle = map(value, -1*threshold, threshold, SERVO_MAX, SERVO_MIN);
-    servo.write(mappedAngle);
-  }
-
-// ======== Process arm servo according to value ======
-  void processArmServo(int value, Servo servo) {
-    int mappedAngle = map(value, -1*MOVEMENT_THRESHOLD, MOVEMENT_THRESHOLD, 0, 180);
-    servo.write(mappedAngle);
   }
 
 // ======== moveForwardBack ===========
@@ -322,19 +181,6 @@ void loop() {
     analogWrite(PWM3,OutputToMotor3(-value));
     analogWrite(PWM4,OutputToMotor4(-value));
   }
-
-//===== double Deadband(double value,double limit) =====
-  //===== Set Dead Band =====
-  // If the input signal from receiver is in the band limit, set input signal to 0.0.
-  double Deadband(double value,double limit)
-  {
-    double temp = 0.0;
-    if(value >= limit) temp = value-limit;
-    else if(value <= -limit) temp = value+limit;
-    else temp = 0.0;
-    return temp;
-  }
-
 
 //===== int OutputToMotor(int value) ======
   //===== Assign Motor's Direction and Scale Down Input Signal =====
