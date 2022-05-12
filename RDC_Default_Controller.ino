@@ -7,6 +7,7 @@
 #include <Servo.h>
 #include <AccelStepper.h>
 #include <Ewma.h>
+#include <ArduinoJson.h>
 #include "configuration.h"
 
 
@@ -233,15 +234,15 @@ void loop() {
       processArmServo(input4, myServo4);
       if(abs(input1) > MOVEMENT_THRESHOLD/2) {
         armStepper.setMaxSpeed(1000);
-        armStepper.setSpeed(input1/abs(input1) * 100);
+        armStepper.setSpeed(input1/abs(input1) * -100);
       }
       else {
         armStepper.setSpeed(0);
         armStepper.stop();
       }
       if(abs(input2) > MOVEMENT_THRESHOLD/2) {
-        digitalWrite(ARM_DC_IN_A, input2/abs(input2) <= 0);
-        digitalWrite(ARM_DC_IN_B, input2/abs(input2) > 0);
+        digitalWrite(ARM_DC_IN_A, input2/abs(input2) > 0);
+        digitalWrite(ARM_DC_IN_B, input2/abs(input2) <= 0);
       }
       else {
         digitalWrite(ARM_DC_IN_A, LOW);
